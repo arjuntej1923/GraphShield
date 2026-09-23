@@ -1,0 +1,7 @@
+model,true_negatives,false_positives,false_negatives,total_errors,true_positives
+logistic_regression,8660,789,268,1057,256.0
+random_forest,9428,21,224,245,300.0
+xgboost,9424,25,223,248,301.0
+gcn,8926,523,399,922,125.0
+graphsage,9003,446,299,745,225.0
+gat,8964,485,365,850,159.0

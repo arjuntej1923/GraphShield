@@ -1,0 +1,12 @@
+Property,Value
+Total graph nodes,203769
+Total graph edges,234355
+Total time steps,49
+Labeled transactions,46564
+Illicit transactions,4545
+Licit transactions,42019
+Illicit rate among labeled,9.76%
+Train time steps,1-34
+Validation time steps,35-40
+Test time steps,41-49
+Transaction features,165

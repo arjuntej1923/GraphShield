@@ -1,0 +1,5 @@
+,total_neighbors,total_neighbors,total_neighbors,illicit_neighbors,illicit_neighbors,illicit_neighbors,licit_neighbors,licit_neighbors,licit_neighbors,unknown_neighbors,unknown_neighbors,unknown_neighbors,illicit_neighbor_ratio,illicit_neighbor_ratio,illicit_neighbor_ratio,licit_neighbor_ratio,licit_neighbor_ratio,licit_neighbor_ratio,unknown_neighbor_ratio,unknown_neighbor_ratio,unknown_neighbor_ratio
+,mean,median,std,mean,median,std,mean,median,std,mean,median,std,mean,median,std,mean,median,std,mean,median,std
+class_name,,,,,,,,,,,,,,,,,,,,,
+illicit,2.030040439052571,1.0,7.3317174945519135,0.4846909300982091,0.0,0.7798177687569069,0.3489312536106297,0.0,1.1606685205154668,1.196418255343732,1.0,6.387343822401186,0.2584674424362466,0.0,0.4019620886949159,0.21063832480030348,0.0,0.37346432673952545,0.5308942327634499,0.5,0.45926177098586884
+licit,2.971549636803874,2.0,7.104650226039039,0.045702179176755446,0.0,0.5344190435479546,1.5777088377723971,1.0,3.8172786293848144,1.3481386198547216,1.0,5.1878503929760145,0.013219758275180005,0.0,0.09603883606464206,0.6416015378975298,0.75,0.3970694013584695,0.3451787038272901,0.2,0.39231059469247903

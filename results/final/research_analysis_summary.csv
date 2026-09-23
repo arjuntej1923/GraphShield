@@ -1,0 +1,11 @@
+Analysis,Status,Primary finding
+Traditional ML baseline,Completed,Tree-based models achieved strong PR-AUC using transaction features.
+Graph structure,Completed,Illicit and licit transactions exhibit different degree and neighbor structures.
+Neighbor label propagation,Completed,Neighbor labels contain relational signal but simple propagation is limited.
+GNN comparison,Completed,GNN architectures exhibit different levels of relational predictive performance.
+Structural-only GNN,Completed,Degree-only graph information is insufficient compared with transaction features.
+Feature ablation,Completed,Performance depends substantially on transaction feature information.
+Error analysis,Completed,"Model errors vary across classes, confidence levels, model agreement, and time."
+Computational efficiency,Completed,GNNs require more training computation than the tested traditional baselines.
+Multi-seed robustness,Completed,"Traditional Random Forest performance was highly stable, while GNN results showed greater variability."
+Statistical comparison,Completed,"Five paired seeds provide descriptive robustness evidence, but limited statistical power."
