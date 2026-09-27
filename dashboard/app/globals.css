@@ -184,8 +184,8 @@ select {
 /* MAIN */
 
 .main-content {
-  width: calc(100% - 245px);
-  margin-left: 245px;
+  width: 100%;
+  margin-left: 0;
   padding: 0 42px;
   max-width: 1700px;
 }
@@ -812,8 +812,8 @@ select {
   }
 
   .main-content {
-    width: calc(100% - 210px);
-    margin-left: 210px;
+    width: 100%;
+    margin-left: 0;
     padding: 0 25px;
   }
 
