@@ -3420,7 +3420,7 @@ select {
 .gs-main-content {
   flex: 1;
   min-width: 0;
-  margin-left: 0 !important;
+  margin-left: 254px !important;
   padding-left: 32px !important;
   padding-right: 32px !important;
 }

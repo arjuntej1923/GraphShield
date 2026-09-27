@@ -1,6 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -74,7 +79,14 @@ export default function GraphExplorer() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Keeps track of the latest request.
+  // If an older request finishes after a newer one,
+  // its result will be ignored.
+  const requestIdRef = useRef(0);
+
   async function loadTransaction(id?: string) {
+    const requestId = ++requestIdRef.current;
+
     setLoading(true);
     setError("");
 
@@ -84,6 +96,7 @@ export default function GraphExplorer() {
         : "";
 
       const response = await fetch(`/api/graph${query}`);
+
       const result = await response.json();
 
       if (!response.ok) {
@@ -92,16 +105,26 @@ export default function GraphExplorer() {
         );
       }
 
-      setData(result);
+      // Only allow the latest request to update the UI.
+      if (requestId === requestIdRef.current) {
+        setData(result);
+      }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load transaction."
-      );
-      setData(null);
+      // Ignore errors from stale requests.
+      if (requestId === requestIdRef.current) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load transaction."
+        );
+
+        setData(null);
+      }
     } finally {
-      setLoading(false);
+      // Only the latest request controls the loading state.
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -112,12 +135,14 @@ export default function GraphExplorer() {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!transactionId.trim()) {
+    const trimmedId = transactionId.trim();
+
+    if (!trimmedId) {
       loadTransaction();
       return;
     }
 
-    loadTransaction(transactionId.trim());
+    loadTransaction(trimmedId);
   }
 
   return (
@@ -137,6 +162,7 @@ export default function GraphExplorer() {
             <div className="graph-eyebrow">
               GRAPH MACHINE LEARNING
             </div>
+
             <h1>Graph Explorer</h1>
           </div>
         </div>
@@ -154,16 +180,21 @@ export default function GraphExplorer() {
               TRANSACTION NETWORK
             </div>
 
-            <h2>Investigate transaction relationships.</h2>
+            <h2>
+              Investigate transaction relationships.
+            </h2>
 
             <p>
-              Explore the neighborhood structure of real transactions
-              from the Elliptic Bitcoin graph.
+              Explore the neighborhood structure of real
+              transactions from the Elliptic Bitcoin graph.
             </p>
           </div>
         </div>
 
-        <form className="transaction-search" onSubmit={handleSubmit}>
+        <form
+          className="transaction-search"
+          onSubmit={handleSubmit}
+        >
           <div className="search-icon">
             <Search size={18} />
           </div>
@@ -176,7 +207,10 @@ export default function GraphExplorer() {
             placeholder="Enter a transaction ID..."
           />
 
-          <button type="submit" disabled={loading}>
+          <button
+            type="submit"
+            disabled={loading}
+          >
             {loading ? "Loading..." : "Investigate"}
             <ArrowRight size={15} />
           </button>
@@ -206,7 +240,10 @@ export default function GraphExplorer() {
                     data.transaction.label
                   )}`}
                 >
-                  <LabelIcon label={data.transaction.label} />
+                  <LabelIcon
+                    label={data.transaction.label}
+                  />
+
                   {data.transaction.label.toUpperCase()}
                 </div>
               </div>
@@ -229,35 +266,49 @@ export default function GraphExplorer() {
                 <div className="stat-icon blue">
                   <GitBranch size={17} />
                 </div>
+
                 <span>INCOMING</span>
-                <strong>{data.transaction.incoming}</strong>
+
+                <strong>
+                  {data.transaction.incoming}
+                </strong>
               </div>
 
               <div className="graph-stat">
                 <div className="stat-icon purple">
                   <GitBranch size={17} />
                 </div>
+
                 <span>OUTGOING</span>
-                <strong>{data.transaction.outgoing}</strong>
+
+                <strong>
+                  {data.transaction.outgoing}
+                </strong>
               </div>
 
               <div className="graph-stat">
                 <div className="stat-icon cyan">
                   <Network size={17} />
                 </div>
+
                 <span>TOTAL DEGREE</span>
-                <strong>{data.transaction.degree}</strong>
+
+                <strong>
+                  {data.transaction.degree}
+                </strong>
               </div>
 
               <div className="graph-stat">
                 <div className="stat-icon red">
                   <Target size={17} />
                 </div>
+
                 <span>ILLICIT RATIO</span>
+
                 <strong>
-                  {(data.neighborhood.illicitRatio * 100).toFixed(
-                    1
-                  )}
+                  {(
+                    data.neighborhood.illicitRatio * 100
+                  ).toFixed(1)}
                   %
                 </strong>
               </div>
@@ -267,8 +318,13 @@ export default function GraphExplorer() {
               <div className="network-panel">
                 <div className="panel-header">
                   <div>
-                    <span>RELATIONAL STRUCTURE</span>
-                    <h3>Transaction Neighborhood</h3>
+                    <span>
+                      RELATIONAL STRUCTURE
+                    </span>
+
+                    <h3>
+                      Transaction Neighborhood
+                    </h3>
                   </div>
                 </div>
 
@@ -319,6 +375,7 @@ export default function GraphExplorer() {
 
                   <div className="network-caption">
                     <Activity size={13} />
+
                     {data.neighbors.length} neighboring
                     transactions loaded
                   </div>
@@ -328,7 +385,10 @@ export default function GraphExplorer() {
               <div className="neighbors-panel">
                 <div className="panel-header">
                   <div>
-                    <span>CONNECTED TRANSACTIONS</span>
+                    <span>
+                      CONNECTED TRANSACTIONS
+                    </span>
+
                     <h3>Neighbor Analysis</h3>
                   </div>
 
@@ -340,6 +400,7 @@ export default function GraphExplorer() {
                 <div className="neighbor-summary">
                   <div>
                     <span>ILLICIT</span>
+
                     <strong className="red-text">
                       {data.neighborhood.illicit}
                     </strong>
@@ -347,6 +408,7 @@ export default function GraphExplorer() {
 
                   <div>
                     <span>LICIT</span>
+
                     <strong className="green-text">
                       {data.neighborhood.licit}
                     </strong>
@@ -354,6 +416,7 @@ export default function GraphExplorer() {
 
                   <div>
                     <span>UNKNOWN</span>
+
                     <strong>
                       {data.neighborhood.unknown}
                     </strong>
@@ -370,9 +433,12 @@ export default function GraphExplorer() {
                   {data.neighbors.map((neighbor) => (
                     <button
                       key={neighbor.id}
+                      type="button"
                       className="neighbor-row"
                       onClick={() =>
-                        loadTransaction(neighbor.id)
+                        loadTransaction(
+                          neighbor.id
+                        )
                       }
                     >
                       <span className="neighbor-id">
@@ -384,7 +450,10 @@ export default function GraphExplorer() {
                           neighbor.label
                         )}`}
                       >
-                        <LabelIcon label={neighbor.label} />
+                        <LabelIcon
+                          label={neighbor.label}
+                        />
+
                         {neighbor.label}
                       </span>
 
@@ -407,8 +476,8 @@ export default function GraphExplorer() {
 
                 <p>
                   GraphShield evaluates whether transaction
-                  relationships provide useful information beyond
-                  transaction-level features.
+                  relationships provide useful information
+                  beyond transaction-level features.
                 </p>
               </div>
             </section>

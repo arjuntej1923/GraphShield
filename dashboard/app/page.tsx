@@ -175,79 +175,8 @@ function SectionHeader({
 export default function Home() {
   return (
     <main className="dashboard-shell">
-      {/* SIDEBAR */}
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">
-            <Shield size={21} />
-          </div>
-          <div>
-            <div className="brand-name">GraphShield</div>
-            <div className="brand-subtitle">Research Platform</div>
-          </div>
-        </div>
-
-        <div className="sidebar-section">
-          <div className="sidebar-label">OVERVIEW</div>
-
-          <div className="nav-item active">
-            <Activity size={17} />
-            Command Center
-          </div>
-
-          <div className="nav-item">
-            <Network size={17} />
-            Graph Explorer
-          </div>
-
-          <div className="nav-item">
-            <BrainCircuit size={17} />
-            Model Laboratory
-          </div>
-
-          <div className="nav-item">
-            <Target size={17} />
-            Transaction Analysis
-          </div>
-        </div>
-
-        <div className="sidebar-section">
-          <div className="sidebar-label">RESEARCH</div>
-
-          <div className="nav-item">
-            <BarChart3 size={17} />
-            Feature Intelligence
-          </div>
-
-          <div className="nav-item">
-            <TrendingUp size={17} />
-            Temporal Analysis
-          </div>
-
-          <div className="nav-item">
-            <AlertTriangle size={17} />
-            Error Analysis
-          </div>
-
-          <div className="nav-item">
-            <Zap size={17} />
-            Robustness
-          </div>
-        </div>
-
-        <div className="sidebar-bottom">
-          <div className="system-status">
-            <span className="status-dot" />
-            <div>
-              <strong>Research Environment</strong>
-              <span>All experiments loaded</span>
-            </div>
-          </div>
-
-          <div className="version">GRAPHSHEILD v1.0 · 2026</div>
-        </div>
-      </aside>
-
+      
+      
       {/* MAIN CONTENT */}
       <section className="main-content">
         {/* TOP BAR */}

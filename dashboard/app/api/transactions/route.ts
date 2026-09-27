@@ -24,12 +24,50 @@ type NeighborNode = {
 
 const ROOT = path.resolve(process.cwd(), "..");
 
-const GRAPH_STRUCTURE_PATH = path.join(
+/*
+ * ============================================================
+ * FULL TRANSACTION METADATA
+ * ============================================================
+ *
+ * This file was generated from:
+ *
+ * data/raw/elliptic/elliptic_txs_features.csv
+ * data/raw/elliptic/elliptic_txs_classes.csv
+ *
+ * It contains only:
+ *
+ * txId
+ * time_step
+ * class_name
+ *
+ * This avoids loading the ~658 MB feature matrix into memory.
+ */
+const TRANSACTION_METADATA_PATH = path.join(
   ROOT,
-  "results",
-  "graph_structure_test.csv"
+  "data",
+  "processed",
+  "elliptic_transaction_metadata.csv"
 );
 
+/*
+ * Complete Elliptic edge list.
+ */
+const EDGE_LIST_PATH = path.join(
+  ROOT,
+  "data",
+  "raw",
+  "elliptic",
+  "elliptic_txs_edgelist.csv"
+);
+
+/*
+ * Test-set research data.
+ *
+ * These remain useful for:
+ * - test-set neighbor statistics
+ * - test transaction IDs
+ * - model predictions
+ */
 const NEIGHBOR_STRUCTURE_PATH = path.join(
   ROOT,
   "results",
@@ -43,20 +81,16 @@ const TEST_TEMPORAL_PATH = path.join(
   "test_temporal.csv"
 );
 
-const EDGE_LIST_PATH = path.join(
-  ROOT,
-  "data",
-  "raw",
-  "elliptic",
-  "elliptic_txs_edgelist.csv"
-);
-
 const PREDICTION_DIR = path.join(
   ROOT,
   "results",
   "predictions"
 );
 
+/*
+ * Validation-selected thresholds from the
+ * GraphShield research experiments.
+ */
 const THRESHOLDS: Record<string, number> = {
   "Logistic Regression": 0.93,
   "Random Forest": 0.57,
@@ -66,25 +100,42 @@ const THRESHOLDS: Record<string, number> = {
   GAT: 0.88,
 };
 
+/*
+ * Prediction files contain probabilities for
+ * the labeled test transactions.
+ */
 const PREDICTION_FILES: Record<string, string> = {
   "Logistic Regression":
     "logistic_regression_test.csv",
+
   "Random Forest":
     "random_forest_test.csv",
+
   XGBoost:
     "xgboost_test.csv",
+
   GCN:
     "gcn_test.csv",
+
   GraphSAGE:
     "graphsage_test.csv",
+
   GAT:
     "gat_test.csv",
 };
 
+/*
+ * ============================================================
+ * CSV HELPERS
+ * ============================================================
+ */
+
 function parseCsvLine(line: string): string[] {
-  return line.split(",").map((value) =>
-    value.trim().replace(/^"|"$/g, "")
-  );
+  return line
+    .split(",")
+    .map((value) =>
+      value.trim().replace(/^"|"$/g, "")
+    );
 }
 
 function readCsv(filePath: string): string[][] {
@@ -101,86 +152,213 @@ function readCsv(filePath: string): string[][] {
 
   return content
     .split(/\r?\n/)
-    .filter((line) => line.trim().length > 0)
+    .filter(
+      (line) => line.trim().length > 0
+    )
     .map(parseCsvLine);
 }
 
-function loadGraphStructure(): Map<
+/*
+ * ============================================================
+ * FULL TRANSACTION GRAPH
+ * ============================================================
+ *
+ * Reads the lightweight metadata file and then
+ * calculates degree information from the complete
+ * Elliptic edge list.
+ */
+function loadFullTransactionGraph(): Map<
   string,
   GraphRow
 > {
-  const rows = readCsv(GRAPH_STRUCTURE_PATH);
+  const metadataRows =
+    readCsv(
+      TRANSACTION_METADATA_PATH
+    );
 
-  const map = new Map<string, GraphRow>();
+  const graphMap =
+    new Map<string, GraphRow>();
 
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
+  if (metadataRows.length === 0) {
+    throw new Error(
+      "Transaction metadata file is empty."
+    );
+  }
 
-    if (!row[0]) continue;
+  const header =
+    metadataRows[0];
 
-    map.set(row[0], {
-      txId: row[0],
-      timeStep: Number(row[1]),
-      label: Number(row[2]),
+  const txIdIndex =
+    header.indexOf("txId");
+
+  const timeStepIndex =
+    header.indexOf("time_step");
+
+  const classNameIndex =
+    header.indexOf("class_name");
+
+  if (
+    txIdIndex === -1 ||
+    timeStepIndex === -1 ||
+    classNameIndex === -1
+  ) {
+    throw new Error(
+      "Invalid transaction metadata file. Expected txId,time_step,class_name."
+    );
+  }
+
+  /*
+   * Build all 203,769 transaction nodes.
+   */
+  for (
+    let i = 1;
+    i < metadataRows.length;
+    i++
+  ) {
+    const row =
+      metadataRows[i];
+
+    const txId =
+      row[txIdIndex];
+
+    if (!txId) {
+      continue;
+    }
+
+    const timeStep =
+      Number(
+        row[timeStepIndex]
+      );
+
+    const className =
+      row[classNameIndex] ||
+      "unknown";
+
+    /*
+     * Internal class encoding:
+     *
+     * 1  = illicit
+     * 0  = licit
+     * -1 = unknown
+     */
+    let label = -1;
+
+    if (className === "illicit") {
+      label = 1;
+    } else if (
+      className === "licit"
+    ) {
+      label = 0;
+    }
+
+    graphMap.set(txId, {
+      txId,
+
+      timeStep:
+        Number.isFinite(timeStep)
+          ? timeStep
+          : 0,
+
+      label,
+
       labeled:
-        row[3]?.toLowerCase() === "true",
-      in_degree: Number(row[4]),
-      out_degree: Number(row[5]),
-      total_degree: Number(row[6]),
+        label >= 0,
+
+      in_degree: 0,
+
+      out_degree: 0,
+
+      total_degree: 0,
+
       class_name:
-        row[7] || "unknown",
+        className,
     });
   }
 
-  return map;
-}
+  /*
+   * ==========================================================
+   * BUILD COMPLETE GRAPH DEGREE INFORMATION
+   * ==========================================================
+   */
 
-function loadPredictions(
-  model: string
-): number[] {
-  const fileName =
-    PREDICTION_FILES[model];
+  const edgeRows =
+    readCsv(EDGE_LIST_PATH);
 
-  const filePath = path.join(
-    PREDICTION_DIR,
-    fileName
-  );
+  if (edgeRows.length > 0) {
+    const header =
+      edgeRows[0];
 
-  const rows = readCsv(filePath);
+    let sourceIndex =
+      header.indexOf("txId1");
 
-  const probabilities: number[] = [];
+    let targetIndex =
+      header.indexOf("txId2");
 
-  for (let i = 1; i < rows.length; i++) {
-    if (!rows[i][1]) continue;
+    let start = 1;
 
-    probabilities.push(
-      Number(rows[i][1])
-    );
+    /*
+     * Fallback for a headerless edge file.
+     */
+    if (
+      sourceIndex === -1 ||
+      targetIndex === -1
+    ) {
+      sourceIndex = 0;
+      targetIndex = 1;
+      start = 0;
+    }
+
+    for (
+      let i = start;
+      i < edgeRows.length;
+      i++
+    ) {
+      const row =
+        edgeRows[i];
+
+      const source =
+        row[sourceIndex];
+
+      const target =
+        row[targetIndex];
+
+      if (!source || !target) {
+        continue;
+      }
+
+      const sourceNode =
+        graphMap.get(source);
+
+      const targetNode =
+        graphMap.get(target);
+
+      /*
+       * source -> target
+       *
+       * Therefore:
+       * source gets outgoing degree
+       * target gets incoming degree
+       */
+      if (sourceNode) {
+        sourceNode.out_degree++;
+        sourceNode.total_degree++;
+      }
+
+      if (targetNode) {
+        targetNode.in_degree++;
+        targetNode.total_degree++;
+      }
+    }
   }
 
-  return probabilities;
+  return graphMap;
 }
 
-function loadTestTransactionIds(): string[] {
-  const rows =
-    readCsv(TEST_TEMPORAL_PATH);
-
-  const header = rows[0];
-
-  const txIndex =
-    header.indexOf("txId");
-
-  if (txIndex === -1) {
-    throw new Error(
-      "txId column not found in test_temporal.csv"
-    );
-  }
-
-  return rows
-    .slice(1)
-    .map((row) => row[txIndex])
-    .filter(Boolean);
-}
+/*
+ * ============================================================
+ * EDGE LIST
+ * ============================================================
+ */
 
 function loadEdges(): Array<{
   source: string;
@@ -193,7 +371,8 @@ function loadEdges(): Array<{
     return [];
   }
 
-  const header = rows[0];
+  const header =
+    rows[0];
 
   let sourceIndex =
     header.indexOf("txId1");
@@ -201,9 +380,10 @@ function loadEdges(): Array<{
   let targetIndex =
     header.indexOf("txId2");
 
+  let start = 1;
+
   /*
-   * Fallback in case the edge file has no
-   * header or uses different column names.
+   * Fallback for headerless files.
    */
   if (
     sourceIndex === -1 ||
@@ -211,6 +391,7 @@ function loadEdges(): Array<{
   ) {
     sourceIndex = 0;
     targetIndex = 1;
+    start = 0;
   }
 
   const edges: Array<{
@@ -218,72 +399,111 @@ function loadEdges(): Array<{
     target: string;
   }> = [];
 
-  const start =
-    header[0] === "txId1" ? 1 : 0;
-
   for (
     let i = start;
     i < rows.length;
     i++
   ) {
-    const row = rows[i];
+    const row =
+      rows[i];
 
-    if (!row[sourceIndex] || !row[targetIndex]) {
+    const source =
+      row[sourceIndex];
+
+    const target =
+      row[targetIndex];
+
+    if (!source || !target) {
       continue;
     }
 
     edges.push({
-      source: row[sourceIndex],
-      target: row[targetIndex],
+      source,
+      target,
     });
   }
 
   return edges;
 }
 
+/*
+ * ============================================================
+ * BUILD TRANSACTION NEIGHBORS
+ * ============================================================
+ */
+
 function buildNeighbors(
   txId: string,
-  graphMap: Map<string, GraphRow>
+  graphMap: Map<string, GraphRow>,
+  edges: Array<{
+    source: string;
+    target: string;
+  }>
 ): NeighborNode[] {
-  const edges = loadEdges();
-
   const neighbors: NeighborNode[] = [];
 
   for (const edge of edges) {
-
+    /*
+     * Incoming:
+     *
+     * edge.source -> txId
+     */
     if (edge.target === txId) {
       const node =
         graphMap.get(edge.source);
 
       neighbors.push({
         txId: edge.source,
+
         direction: "incoming",
+
         label:
-          node?.class_name || "unknown",
+          node?.class_name ??
+          "unknown",
+
         labeled:
-          node?.labeled ?? false,
+          node?.labeled ??
+          false,
+
         timeStep:
-          node?.timeStep ?? null,
+          node?.timeStep ??
+          null,
+
         degree:
-          node?.total_degree ?? 0,
+          node?.total_degree ??
+          0,
       });
     }
 
+    /*
+     * Outgoing:
+     *
+     * txId -> edge.target
+     */
     if (edge.source === txId) {
       const node =
         graphMap.get(edge.target);
 
       neighbors.push({
         txId: edge.target,
+
         direction: "outgoing",
+
         label:
-          node?.class_name || "unknown",
+          node?.class_name ??
+          "unknown",
+
         labeled:
-          node?.labeled ?? false,
+          node?.labeled ??
+          false,
+
         timeStep:
-          node?.timeStep ?? null,
+          node?.timeStep ??
+          null,
+
         degree:
-          node?.total_degree ?? 0,
+          node?.total_degree ??
+          0,
       });
     }
   }
@@ -291,28 +511,131 @@ function buildNeighbors(
   /*
    * Remove duplicate relationships.
    */
-  const unique = new Map<
-    string,
-    NeighborNode
-  >();
+  const unique =
+    new Map<
+      string,
+      NeighborNode
+    >();
 
   for (const neighbor of neighbors) {
     const key =
       `${neighbor.direction}:${neighbor.txId}`;
 
     if (!unique.has(key)) {
-      unique.set(key, neighbor);
+      unique.set(
+        key,
+        neighbor
+      );
     }
   }
 
-  return Array.from(unique.values());
+  return Array.from(
+    unique.values()
+  );
 }
+
+/*
+ * ============================================================
+ * TEST TRANSACTION IDS
+ * ============================================================
+ */
+
+function loadTestTransactionIds(): string[] {
+  const rows =
+    readCsv(
+      TEST_TEMPORAL_PATH
+    );
+
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const header =
+    rows[0];
+
+  const txIndex =
+    header.indexOf("txId");
+
+  if (txIndex === -1) {
+    throw new Error(
+      "txId column not found in test_temporal.csv"
+    );
+  }
+
+  return rows
+    .slice(1)
+    .map(
+      (row) =>
+        row[txIndex]
+    )
+    .filter(Boolean);
+}
+
+/*
+ * ============================================================
+ * MODEL PREDICTIONS
+ * ============================================================
+ */
+
+function loadPredictions(
+  model: string
+): number[] {
+  const fileName =
+    PREDICTION_FILES[model];
+
+  const filePath =
+    path.join(
+      PREDICTION_DIR,
+      fileName
+    );
+
+  const rows =
+    readCsv(filePath);
+
+  const probabilities: number[] =
+    [];
+
+  for (
+    let i = 1;
+    i < rows.length;
+    i++
+  ) {
+    if (!rows[i][1]) {
+      continue;
+    }
+
+    const probability =
+      Number(rows[i][1]);
+
+    if (
+      Number.isFinite(
+        probability
+      )
+    ) {
+      probabilities.push(
+        probability
+      );
+    }
+  }
+
+  return probabilities;
+}
+
+/*
+ * ============================================================
+ * API
+ * ============================================================
+ */
 
 export async function GET(
   request: NextRequest
 ) {
   try {
-
+    /*
+     * --------------------------------------------------------
+     * Requested transaction
+     * --------------------------------------------------------
+     */
     const searchParams =
       request.nextUrl.searchParams;
 
@@ -330,10 +653,12 @@ export async function GET(
     }
 
     /*
-     * Load graph structure.
+     * --------------------------------------------------------
+     * 1. Load the COMPLETE Elliptic transaction graph
+     * --------------------------------------------------------
      */
     const graphMap =
-      loadGraphStructure();
+      loadFullTransactionGraph();
 
     const graphRow =
       graphMap.get(txId);
@@ -342,151 +667,41 @@ export async function GET(
       return NextResponse.json(
         {
           error:
-            `Transaction ${txId} was not found in the test graph.`,
+            `Transaction ${txId} was not found in the Elliptic graph.`,
         },
         { status: 404 }
       );
     }
 
     /*
-     * Neighbor structure.
+     * --------------------------------------------------------
+     * 2. Load complete edge list
+     * --------------------------------------------------------
      */
-    const neighborRows =
-      readCsv(
-        NEIGHBOR_STRUCTURE_PATH
-      );
-
-    const neighborHeader =
-      neighborRows[0];
-
-    const neighborMap =
-      new Map<string, string[]>();
-
-    const neighborTxIndex =
-      neighborHeader.indexOf("txId");
-
-    for (
-      let i = 1;
-      i < neighborRows.length;
-      i++
-    ) {
-      const row =
-        neighborRows[i];
-
-      if (
-        neighborTxIndex >= 0 &&
-        row[neighborTxIndex]
-      ) {
-        neighborMap.set(
-          row[neighborTxIndex],
-          row
-        );
-      }
-    }
-
-    const neighborRow =
-      neighborMap.get(txId);
+    const edges =
+      loadEdges();
 
     /*
-     * Transaction information.
-     */
-    const transaction = {
-      txId,
-
-      label:
-        graphRow.class_name ||
-        "unknown",
-
-      labelValue:
-        String(graphRow.label),
-
-      labeled:
-        graphRow.labeled,
-
-      timeStep:
-        graphRow.timeStep,
-
-      incoming:
-        graphRow.in_degree,
-
-      outgoing:
-        graphRow.out_degree,
-
-      totalDegree:
-        graphRow.total_degree,
-
-      illicitNeighborRatio:
-        neighborRow
-          ? Number(
-              neighborRow[
-                neighborHeader.indexOf(
-                  "illicit_neighbor_ratio"
-                )
-              ]
-            )
-          : 0,
-
-      illicitNeighbors:
-        neighborRow
-          ? Number(
-              neighborRow[
-                neighborHeader.indexOf(
-                  "illicit_neighbors"
-                )
-              ]
-            )
-          : 0,
-
-      licitNeighbors:
-        neighborRow
-          ? Number(
-              neighborRow[
-                neighborHeader.indexOf(
-                  "licit_neighbors"
-                )
-              ]
-            )
-          : 0,
-
-      unknownNeighbors:
-        neighborRow
-          ? Number(
-              neighborRow[
-                neighborHeader.indexOf(
-                  "unknown_neighbors"
-                )
-              ]
-            )
-          : 0,
-
-      totalNeighbors:
-        neighborRow
-          ? Number(
-              neighborRow[
-                neighborHeader.indexOf(
-                  "total_neighbors"
-                )
-              ]
-            )
-          : graphRow.total_degree,
-    };
-
-    /*
-     * Get actual graph neighbors.
+     * --------------------------------------------------------
+     * 3. Build complete neighborhood
+     * --------------------------------------------------------
      */
     const allNeighbors =
       buildNeighbors(
         txId,
-        graphMap
+        graphMap,
+        edges
       );
 
     /*
-     * Keep the graph visualization manageable.
+     * --------------------------------------------------------
+     * 4. Sort neighbors
      *
-     * We prioritize:
-     * 1. Illicit
-     * 2. Licit
-     * 3. Unknown
+     * Priority:
+     * 1. illicit
+     * 2. licit
+     * 3. unknown
+     * --------------------------------------------------------
      */
     const priority = (
       label: string
@@ -514,11 +729,231 @@ export async function GET(
         priority(b.label)
     );
 
+    /*
+     * Only display the first 20 in
+     * the detailed graph panel.
+     */
     const displayNeighbors =
-      allNeighbors.slice(0, 20);
+      allNeighbors.slice(
+        0,
+        20
+      );
 
     /*
-     * Load prediction IDs.
+     * --------------------------------------------------------
+     * 5. Calculate complete-graph neighbor statistics
+     * --------------------------------------------------------
+     */
+    const illicitNeighbors =
+      allNeighbors.filter(
+        (node) =>
+          node.label ===
+          "illicit"
+      ).length;
+
+    const licitNeighbors =
+      allNeighbors.filter(
+        (node) =>
+          node.label ===
+          "licit"
+      ).length;
+
+    const unknownNeighbors =
+      allNeighbors.filter(
+        (node) =>
+          node.label ===
+          "unknown"
+      ).length;
+
+    const labeledNeighborCount =
+      illicitNeighbors +
+      licitNeighbors;
+
+    const calculatedIllicitRatio =
+      labeledNeighborCount > 0
+        ? illicitNeighbors /
+          labeledNeighborCount
+        : 0;
+
+    /*
+     * --------------------------------------------------------
+     * 6. Load test-set neighbor statistics if available
+     * --------------------------------------------------------
+     *
+     * These statistics are only available for
+     * transactions belonging to the research
+     * test population.
+     */
+    let testNeighborRow:
+      string[] | undefined;
+
+    let testNeighborHeader:
+      string[] = [];
+
+    if (
+      fs.existsSync(
+        NEIGHBOR_STRUCTURE_PATH
+      )
+    ) {
+      const neighborRows =
+        readCsv(
+          NEIGHBOR_STRUCTURE_PATH
+        );
+
+      if (neighborRows.length > 0) {
+        testNeighborHeader =
+          neighborRows[0];
+
+        const neighborTxIndex =
+          testNeighborHeader.indexOf(
+            "txId"
+          );
+
+        if (neighborTxIndex >= 0) {
+          for (
+            let i = 1;
+            i < neighborRows.length;
+            i++
+          ) {
+            if (
+              neighborRows[i][
+                neighborTxIndex
+              ] === txId
+            ) {
+              testNeighborRow =
+                neighborRows[i];
+
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    /*
+     * Helper for test-set-only columns.
+     */
+    const getTestMetric = (
+      column: string
+    ): number | null => {
+      if (
+        !testNeighborRow
+      ) {
+        return null;
+      }
+
+      const index =
+        testNeighborHeader.indexOf(
+          column
+        );
+
+      if (index < 0) {
+        return null;
+      }
+
+      const value =
+        Number(
+          testNeighborRow[index]
+        );
+
+      return Number.isFinite(value)
+        ? value
+        : null;
+    };
+
+    /*
+     * --------------------------------------------------------
+     * 7. Transaction information
+     * --------------------------------------------------------
+     */
+    const transaction = {
+      txId,
+
+      label:
+        graphRow.class_name,
+
+      labelValue:
+        String(graphRow.label),
+
+      labeled:
+        graphRow.labeled,
+
+      timeStep:
+        graphRow.timeStep,
+
+      incoming:
+        graphRow.in_degree,
+
+      outgoing:
+        graphRow.out_degree,
+
+      totalDegree:
+        graphRow.total_degree,
+
+      /*
+       * For test transactions:
+       * use the research-computed neighbor statistics.
+       *
+       * For other graph transactions:
+       * calculate directly from the complete graph.
+       */
+      illicitNeighborRatio:
+        testNeighborRow
+          ? getTestMetric(
+              "illicit_neighbor_ratio"
+            ) ??
+            calculatedIllicitRatio
+          : calculatedIllicitRatio,
+
+      illicitNeighbors:
+        testNeighborRow
+          ? getTestMetric(
+              "illicit_neighbors"
+            ) ??
+            illicitNeighbors
+          : illicitNeighbors,
+
+      licitNeighbors:
+        testNeighborRow
+          ? getTestMetric(
+              "licit_neighbors"
+            ) ??
+            licitNeighbors
+          : licitNeighbors,
+
+      unknownNeighbors:
+        testNeighborRow
+          ? getTestMetric(
+              "unknown_neighbors"
+            ) ??
+            unknownNeighbors
+          : unknownNeighbors,
+
+      totalNeighbors:
+        testNeighborRow
+          ? getTestMetric(
+              "total_neighbors"
+            ) ??
+            allNeighbors.length
+          : allNeighbors.length,
+    };
+
+    /*
+     * --------------------------------------------------------
+     * 8. Model predictions
+     * --------------------------------------------------------
+     *
+     * The prediction files contain predictions
+     * only for the 9,973 labeled test transactions.
+     *
+     * Therefore:
+     *
+     * Test transaction:
+     * probability available
+     *
+     * Unknown/full-graph transaction:
+     * probability = null
+     * prediction = N/A
      */
     const testIds =
       loadTestTransactionIds();
@@ -527,15 +962,12 @@ export async function GET(
       testIds.indexOf(txId);
 
     /*
-     * GNN predictions are aligned with
-     * labeled graph nodes. The test graph
-     * structure contains the same labeled
-     * transaction population.
+     * The GNN prediction files are aligned
+     * to the same labeled test transaction
+     * population.
      */
     const labeledGraphIds =
-      Array.from(graphMap.values())
-        .filter((node) => node.labeled)
-        .map((node) => node.txId);
+      testIds;
 
     const gnnIndex =
       labeledGraphIds.indexOf(txId);
@@ -543,7 +975,9 @@ export async function GET(
     const models: Array<{
       model: string;
       type: string;
-      probability: number | null;
+      probability:
+        | number
+        | null;
       threshold: number;
       prediction:
         | "ILLICIT"
@@ -556,7 +990,6 @@ export async function GET(
         PREDICTION_FILES
       )
     ) {
-
       const probabilities =
         loadPredictions(model);
 
@@ -572,7 +1005,8 @@ export async function GET(
 
       const probability =
         index >= 0 &&
-        index < probabilities.length
+        index <
+          probabilities.length
           ? probabilities[index]
           : null;
 
@@ -582,28 +1016,39 @@ export async function GET(
       let prediction:
         | "ILLICIT"
         | "LICIT"
-        | "N/A" = "N/A";
+        | "N/A" =
+        "N/A";
 
       if (
         probability !== null
       ) {
         prediction =
-          probability >= threshold
+          probability >=
+          threshold
             ? "ILLICIT"
             : "LICIT";
       }
 
       models.push({
         model,
+
         type: isGnn
           ? "Graph Neural Network"
           : "Traditional ML",
+
         probability,
+
         threshold,
+
         prediction,
       });
     }
 
+    /*
+     * --------------------------------------------------------
+     * 9. Consensus
+     * --------------------------------------------------------
+     */
     const illicitVotes =
       models.filter(
         (model) =>
@@ -611,17 +1056,28 @@ export async function GET(
           "ILLICIT"
       ).length;
 
+    const availableModels =
+      models.filter(
+        (model) =>
+          model.probability !==
+          null
+      ).length;
+
     /*
-     * Graph summary.
+     * --------------------------------------------------------
+     * 10. Graph summary
+     * --------------------------------------------------------
      */
     const graph = {
       center: {
         txId,
+
         label:
-          graphRow.class_name ||
-          "unknown",
+          graphRow.class_name,
+
         timeStep:
           graphRow.timeStep,
+
         degree:
           graphRow.total_degree,
       },
@@ -654,6 +1110,11 @@ export async function GET(
         displayNeighbors.length,
     };
 
+    /*
+     * --------------------------------------------------------
+     * 11. Return response
+     * --------------------------------------------------------
+     */
     return NextResponse.json({
       transaction,
 
@@ -661,15 +1122,16 @@ export async function GET(
 
       consensus: {
         illicitVotes,
+
         totalModels:
-          models.length,
+          availableModels,
       },
 
       graph,
 
       source: {
-        graphStructure:
-          "results/graph_structure_test.csv",
+        transactionMetadata:
+          "data/processed/elliptic_transaction_metadata.csv",
 
         neighborStructure:
           "results/neighbor_structure_test.csv",
@@ -681,9 +1143,7 @@ export async function GET(
           "results/predictions/",
       },
     });
-
   } catch (error) {
-
     console.error(
       "Transaction API error:",
       error
